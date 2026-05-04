@@ -1,11 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # setup.sh - Cloudflare IP 优选工具 Linux 一键部署脚本
 # 
 # 用法：
 #   chmod +x setup.sh
-#   sudo ./setup.sh          # 推荐使用 sudo 以便安装软件包
-#   或
-#   ./setup.sh               # 若仅为当前用户配置定时任务，可不用 sudo
+#   ./setup.sh
 
 set -e
 
@@ -34,53 +32,59 @@ command_exists() {
     command -v "$1" &> /dev/null
 }
 
-# ---------- 管理员权限检查与友好提示（对齐 Windows 版） ----------
+# ---------- 权限检查 ----------
 check_root() {
     if [[ $EUID -eq 0 ]]; then
         return 0  # 已是 root
     else
         echo -e "${YELLOW}⚠️  当前未以 root 身份运行。${NC}"
         echo -e "本脚本安装系统软件包需要管理员权限，建议使用 sudo 运行。"
-        echo -e "如果您仅需为当前用户配置定时任务，也可以继续（但可能无法自动安装缺失的软件）。"
         echo ""
         read -p "是否继续以非 root 身份运行？(y/N) " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             echo -e "${CYAN}请使用以下命令重新运行：${NC}"
-            echo -e "  sudo ./setup.sh"
+            echo -e "  sudo bash ./setup.sh"
             echo ""
             exit 1
         fi
-        return 1  # 非 root 但用户选择继续
+        return 1
     fi
 }
 
 check_root
 
+# 动态配置 sudo 前缀（如果是 root 则不用 sudo）
+SUDO_CMD=""
+if [[ $EUID -ne 0 ]]; then
+    SUDO_CMD="sudo "
+fi
+
 # ---------- 1. 检测并安装系统依赖 ----------
 echo -e "${GREEN}[1/4] 检查系统依赖...${NC}"
 
 # 检测包管理器
-if command_exists apt-get; then
+if command_exists apk; then
+    PKG_MANAGER="apk"
+    INSTALL_CMD="${SUDO_CMD}apk add --no-cache"
+elif command_exists apt-get; then
     PKG_MANAGER="apt-get"
-    INSTALL_CMD="sudo apt-get update; sudo apt-get install -y"
+    INSTALL_CMD="${SUDO_CMD}apt-get update && ${SUDO_CMD}apt-get install -y"
 elif command_exists yum; then
     PKG_MANAGER="yum"
-    INSTALL_CMD="sudo yum install -y"
+    INSTALL_CMD="${SUDO_CMD}yum install -y"
 elif command_exists dnf; then
     PKG_MANAGER="dnf"
-    INSTALL_CMD="sudo dnf install -y"
+    INSTALL_CMD="${SUDO_CMD}dnf install -y"
 elif command_exists pacman; then
     PKG_MANAGER="pacman"
-    INSTALL_CMD="sudo pacman -S --noconfirm"
+    INSTALL_CMD="${SUDO_CMD}pacman -S --noconfirm"
 elif command_exists brew; then
     PKG_MANAGER="brew"
     INSTALL_CMD="brew install"
 else
     echo -e "${RED}❌ 未检测到支持的包管理器。${NC}"
     echo -e "请手动安装以下软件：python3, pip, git, curl"
-    echo -e "或者安装 Homebrew (macOS): /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-    echo -e "然后重新运行本脚本。"
     exit 1
 fi
 
@@ -101,7 +105,15 @@ if command_exists pip3; then
     echo -e "✅ pip3 已安装: $(which pip3)"
 else
     echo -e "${YELLOW}正在安装 pip3...${NC}"
-    eval "$INSTALL_CMD python3-pip"
+    # 针对不同包管理器适配 pip 的包名
+    if [ "$PKG_MANAGER" == "apk" ]; then
+        eval "$INSTALL_CMD py3-pip"
+    elif [ "$PKG_MANAGER" == "pacman" ]; then
+        eval "$INSTALL_CMD python-pip"
+    else
+        eval "$INSTALL_CMD python3-pip"
+    fi
+    
     if ! command_exists pip3; then
         echo -e "${RED}❌ pip3 安装失败，请手动安装后重试。${NC}"
         exit 1
@@ -138,7 +150,6 @@ echo ""
 echo -e "${GREEN}[2/4] 检查/创建 Python 虚拟环境...${NC}"
 VENV_DIR="$SCRIPT_DIR/venv"
 
-# 检查是否已存在虚拟环境
 if [ -d "$VENV_DIR" ]; then
     echo -e "✅ 虚拟环境已存在: $VENV_DIR"
 else
@@ -147,26 +158,17 @@ else
     if [ -d "$VENV_DIR" ]; then
         echo -e "${GREEN}✅ 虚拟环境创建成功。${NC}"
     else
-        echo -e "${RED}❌ 虚拟环境创建失败，请手动创建: python3 -m venv venv${NC}"
+        echo -e "${RED}❌ 虚拟环境创建失败。如果缺少 venv 模块，请手动安装（如 apk add python3-dev 或 apt install python3-venv）${NC}"
         exit 1
     fi
 fi
 
-# 激活虚拟环境并设置路径
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS/Linux
-    source "$VENV_DIR/bin/activate"
-    VENV_PYTHON="$VENV_DIR/bin/python"
-    VENV_PIP="$VENV_DIR/bin/pip"
-else
-    # Windows（虽然脚本主要用于 Unix-like 系统）
-    source "$VENV_DIR/Scripts/activate"
-    VENV_PYTHON="$VENV_DIR/Scripts/python"
-    VENV_PIP="$VENV_DIR/Scripts/pip"
-fi
+source "$VENV_DIR/bin/activate"
+VENV_PYTHON="$VENV_DIR/bin/python"
+VENV_PIP="$VENV_DIR/bin/pip"
 echo ""
 
-# ---------- 3. 安装 Python 依赖 requests（智能跳过） ----------
+# ---------- 3. 安装 Python 依赖 requests ----------
 echo -e "${GREEN}[3/4] 检查 Python 包 requests...${NC}"
 if "$VENV_PIP" show requests &> /dev/null; then
     echo -e "✅ requests 已安装，跳过。"
@@ -200,31 +202,12 @@ if [ ! -f "$PYTHON_SCRIPT" ]; then
     exit 1
 fi
 
-# ---------- 5. 配置 cron 定时任务（对齐 Windows 的下个整5分开始 + 每5分钟重复） ----------
+# ---------- 5. 配置 cron 定时任务 ----------
 echo -e "${GREEN}[5/5] 配置定时任务（每${TASK_INTERVAL_MINUTES}分钟运行一次）...${NC}"
 
-# 计算下一个整 5 分钟时刻（用于显示）
-calc_next_aligned() {
-    local interval=$1
-    local current_min=$(date +%M)
-    local current_hour=$(date +%H)
-    local next_min=$(( ((current_min / interval) + 1) * interval ))
-    local next_hour=$current_hour
-    if [ $next_min -ge 60 ]; then
-        next_min=0
-        next_hour=$(( (next_hour + 1) % 24 ))
-    fi
-    printf "%02d:%02d" $next_hour $next_min
-}
-
-NEXT_RUN=$(calc_next_aligned $TASK_INTERVAL_MINUTES)
-echo -e "   首次运行将发生在: ${CYAN}$NEXT_RUN${NC}（之后每 ${TASK_INTERVAL_MINUTES} 分钟运行一次）"
-
-# 构建 cron 表达式：分钟字段为 */5（每5分钟）
 CRON_MINUTE_FIELD="*/5"
 PYTHON_PATH="$VENV_PYTHON"
 
-# 智能检测优先级前缀（对齐 Windows 的高优先级逻辑）
 if [[ $EUID -eq 0 ]]; then
     NICE_PREFIX="nice -n -10"
     echo -e "   运行优先级: 高 (nice -n -10)"
@@ -236,39 +219,25 @@ fi
 CRON_CMD="$CRON_MINUTE_FIELD * * * * cd \"$SCRIPT_DIR\" && $NICE_PREFIX \"$PYTHON_PATH\" \"$SCRIPT_DIR/$PYTHON_SCRIPT\" >> \"$SCRIPT_DIR/cron.log\" 2>&1"
 CRON_COMMENT="# Cloudflare IP 优选工具定时任务（每5分钟，整点对齐）"
 
-# 检查是否已存在相同任务（基于脚本路径去重）
 if crontab -l 2>/dev/null | grep -F "$SCRIPT_DIR/$PYTHON_SCRIPT" > /dev/null; then
     echo -e "${YELLOW}⚠️ 定时任务已存在，跳过添加。${NC}"
 else
-    # 添加新任务
     (crontab -l 2>/dev/null || true; echo "$CRON_COMMENT"; echo "$CRON_CMD") | crontab -
-    echo -e "${GREEN}✅ 定时任务已添加（每${TASK_INTERVAL_MINUTES}分钟，从下一个整5分钟开始）${NC}"
+    echo -e "${GREEN}✅ 定时任务已添加${NC}"
 fi
 
 echo -e "   执行命令: $NICE_PREFIX $PYTHON_PATH $SCRIPT_DIR/$PYTHON_SCRIPT"
 echo -e "   日志文件: $SCRIPT_DIR/cron.log"
 echo ""
 
-# ---------- 赋予 git_sync.sh 执行权限（如果存在） ----------
 if [ -f "git_sync.sh" ]; then
     chmod +x git_sync.sh
-    echo -e "✅ 已赋予 git_sync.sh 执行权限"
 fi
 
-# ---------- 后续指引 ----------
-echo ""
 echo -e "${CYAN}========================================"
 echo -e " 🎉 部署完成！"
 echo -e "========================================${NC}\n"
-echo -e "${YELLOW}👉 接下来请完成以下手动配置步骤：${NC}"
-echo -e "1. 编辑 config.json，填写 WxPusher 的 APP_TOKEN 和 UID（如需通知）"
-echo -e "2. 编辑 git_sync.sh，填写你的 GitHub Token、用户名及仓库名"
-echo -e "3. 手动运行一次测试: ${CYAN}python3 main.py${NC}"
-echo -e "4. 查看定时任务日志: ${CYAN}tail -f cron.log${NC}"
-echo -e "5. 管理定时任务: ${CYAN}crontab -e${NC}"
-echo ""
 
-# 询问是否立即运行
 read -p "是否立即运行一次 main.py 进行测试？(y/N) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
