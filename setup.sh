@@ -105,7 +105,6 @@ if command_exists pip3; then
     echo -e "✅ pip3 已安装: $(which pip3)"
 else
     echo -e "${YELLOW}正在安装 pip3...${NC}"
-    # 针对不同包管理器适配 pip 的包名
     if [ "$PKG_MANAGER" == "apk" ]; then
         eval "$INSTALL_CMD py3-pip"
     elif [ "$PKG_MANAGER" == "pacman" ]; then
@@ -120,73 +119,55 @@ else
     fi
 fi
 
-# Git
-if command_exists git; then
-    echo -e "✅ Git 已安装: $(which git)"
-else
-    echo -e "${YELLOW}正在安装 Git...${NC}"
-    eval "$INSTALL_CMD git"
-    if ! command_exists git; then
-        echo -e "${RED}❌ Git 安装失败，请手动安装后重试。${NC}"
-        exit 1
+# Git 与 curl
+for cmd in git curl; do
+    if command_exists $cmd; then
+        echo -e "✅ $cmd 已安装: $(which $cmd)"
+    else
+        echo -e "${YELLOW}正在安装 $cmd...${NC}"
+        eval "$INSTALL_CMD $cmd"
     fi
-fi
-
-# curl
-if command_exists curl; then
-    echo -e "✅ curl 已安装: $(which curl)"
-else
-    echo -e "${YELLOW}正在安装 curl...${NC}"
-    eval "$INSTALL_CMD curl"
-    if ! command_exists curl; then
-        echo -e "${RED}❌ curl 安装失败，请手动安装后重试。${NC}"
-        exit 1
-    fi
-fi
-
+done
 echo ""
 
-# ---------- 2. 创建 Python 虚拟环境（venv） ----------
-echo -e "${GREEN}[2/4] 检查/创建 Python 虚拟环境...${NC}"
-VENV_DIR="$SCRIPT_DIR/venv"
+# ---------- 2 & 3. 准备 Python 环境并安装 requests ----------
+echo -e "${GREEN}[2/4] 检查 Python 运行环境与依赖包...${NC}"
 
-if [ -d "$VENV_DIR" ]; then
-    echo -e "✅ 虚拟环境已存在: $VENV_DIR"
+if [ "$PKG_MANAGER" == "apk" ]; then
+    # 针对 Alpine/iSH 的专门优化：跳过慢速的 venv，直接使用系统包管理秒装 requests
+    echo -e "${YELLOW}检测到 Alpine 模拟环境，跳过虚拟环境创建环节以避免卡死...${NC}"
+    eval "$INSTALL_CMD py3-requests"
+    VENV_PYTHON="python3"
+    echo -e "✅ requests 已通过原生包管理器安装完毕。"
 else
-    echo -e "${YELLOW}正在创建虚拟环境...${NC}"
-    python3 -m venv "$VENV_DIR"
+    # 正常 Linux 系统的 venv 逻辑
+    VENV_DIR="$SCRIPT_DIR/venv"
     if [ -d "$VENV_DIR" ]; then
-        echo -e "${GREEN}✅ 虚拟环境创建成功。${NC}"
+        echo -e "✅ 虚拟环境已存在: $VENV_DIR"
     else
-        echo -e "${RED}❌ 虚拟环境创建失败。如果缺少 venv 模块，请手动安装（如 apk add python3-dev 或 apt install python3-venv）${NC}"
-        exit 1
+        echo -e "${YELLOW}正在创建虚拟环境...${NC}"
+        python3 -m venv "$VENV_DIR"
+        if [ ! -d "$VENV_DIR" ]; then
+            echo -e "${RED}❌ 虚拟环境创建失败。${NC}"
+            exit 1
+        fi
     fi
-fi
-
-source "$VENV_DIR/bin/activate"
-VENV_PYTHON="$VENV_DIR/bin/python"
-VENV_PIP="$VENV_DIR/bin/pip"
-echo ""
-
-# ---------- 3. 安装 Python 依赖 requests ----------
-echo -e "${GREEN}[3/4] 检查 Python 包 requests...${NC}"
-if "$VENV_PIP" show requests &> /dev/null; then
-    echo -e "✅ requests 已安装，跳过。"
-else
-    echo -e "${YELLOW}正在安装 requests...${NC}"
-    "$VENV_PIP" install --upgrade pip --quiet
-    "$VENV_PIP" install requests --quiet
+    source "$VENV_DIR/bin/activate"
+    VENV_PYTHON="$VENV_DIR/bin/python"
+    VENV_PIP="$VENV_DIR/bin/pip"
+    
     if "$VENV_PIP" show requests &> /dev/null; then
-        echo -e "${GREEN}✅ requests 库安装完成。${NC}"
+        echo -e "✅ requests 已安装，跳过。"
     else
-        echo -e "${RED}❌ requests 安装失败，请手动执行: $VENV_PIP install requests${NC}"
-        exit 1
+        echo -e "${YELLOW}正在使用 pip 安装 requests...${NC}"
+        "$VENV_PIP" install --upgrade pip --quiet
+        "$VENV_PIP" install requests --quiet
     fi
 fi
 echo ""
 
-# ---------- 4. 创建 .gitignore 保护隐私 ----------
-echo -e "${GREEN}[4/5] 创建 .gitignore...${NC}"
+# ---------- 4. 创建 .gitignore ----------
+echo -e "${GREEN}[3/4] 创建 .gitignore...${NC}"
 cat > .gitignore << 'EOF'
 config.json
 git_sync.ps1
@@ -203,7 +184,7 @@ if [ ! -f "$PYTHON_SCRIPT" ]; then
 fi
 
 # ---------- 5. 配置 cron 定时任务 ----------
-echo -e "${GREEN}[5/5] 配置定时任务（每${TASK_INTERVAL_MINUTES}分钟运行一次）...${NC}"
+echo -e "${GREEN}[4/4] 配置定时任务（每${TASK_INTERVAL_MINUTES}分钟运行一次）...${NC}"
 
 CRON_MINUTE_FIELD="*/5"
 PYTHON_PATH="$VENV_PYTHON"
@@ -222,8 +203,13 @@ CRON_COMMENT="# Cloudflare IP 优选工具定时任务（每5分钟，整点对�
 if crontab -l 2>/dev/null | grep -F "$SCRIPT_DIR/$PYTHON_SCRIPT" > /dev/null; then
     echo -e "${YELLOW}⚠️ 定时任务已存在，跳过添加。${NC}"
 else
-    (crontab -l 2>/dev/null || true; echo "$CRON_COMMENT"; echo "$CRON_CMD") | crontab -
-    echo -e "${GREEN}✅ 定时任务已添加${NC}"
+    # 兼容缺少 crontab 的情况
+    if command_exists crontab; then
+        (crontab -l 2>/dev/null || true; echo "$CRON_COMMENT"; echo "$CRON_CMD") | crontab -
+        echo -e "${GREEN}✅ 定时任务已添加${NC}"
+    else
+        echo -e "${RED}❌ 未找到 crontab 命令，无法自动添加定时任务。你可能需要运行 apk add dcron 来安装。${NC}"
+    fi
 fi
 
 echo -e "   执行命令: $NICE_PREFIX $PYTHON_PATH $SCRIPT_DIR/$PYTHON_SCRIPT"
@@ -242,7 +228,7 @@ read -p "是否立即运行一次 main.py 进行测试？(y/N) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo -e "${CYAN}正在运行 main.py ...${NC}"
-    "$VENV_PYTHON" "$PYTHON_SCRIPT"
+    $VENV_PYTHON "$PYTHON_SCRIPT"
 fi
 
 exit 0
