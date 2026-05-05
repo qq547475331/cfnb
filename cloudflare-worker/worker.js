@@ -259,7 +259,8 @@ async function handleRequest(request) {
   // 路由处理
   switch (path) {
     case '/ip':
-      // 返回纯 IP 列表
+    case '/list':
+      // 返回纯 IP 列表（/ip 或 /list 都支持）
       return handleIpRequest(request);
 
     case '/health':
@@ -274,14 +275,9 @@ async function handleRequest(request) {
         }
       });
 
-    case '/':
     default:
-      // 返回 HTML 页面
-      return new Response(buildHtmlPage(), {
-        headers: {
-          'Content-Type': 'text/html; charset=utf-8'
-        }
-      });
+      // 其他路径（包括根路径 /）都返回纯 IP 列表
+      return handleIpRequest(request);
   }
 }
 
