@@ -136,9 +136,14 @@ echo -e "${GREEN}[2/4] 检查 Python 运行环境与依赖包...${NC}"
 if [ "$PKG_MANAGER" == "apk" ]; then
     # 针对 Alpine/iSH 的专门优化：跳过慢速的 venv，直接使用系统包管理秒装 requests
     echo -e "${YELLOW}检测到 Alpine 模拟环境，跳过虚拟环境创建环节以避免卡死...${NC}"
-    eval "$INSTALL_CMD py3-requests"
+    # 检查是否已安装 requests
+    if python3 -c "import requests" 2>/dev/null; then
+        echo -e "✅ requests 已安装，跳过。"
+    else
+        eval "$INSTALL_CMD py3-requests"
+        echo -e "✅ requests 已通过原生包管理器安装完毕。"
+    fi
     VENV_PYTHON="python3"
-    echo -e "✅ requests 已通过原生包管理器安装完毕。"
 else
     # 正常 Linux 系统的 venv 逻辑
     VENV_DIR="$SCRIPT_DIR/venv"
