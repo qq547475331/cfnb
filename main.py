@@ -817,12 +817,15 @@ def sync_to_github():
         print(f"\n正在同步到 GitHub (尝试 {attempt}/{max_retries})...")
         try:
             cmd = interpreter + [script_path]
+            # 传递完整的环境变量给子进程
+            env = os.environ.copy()
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                creationflags=creationflags
+                creationflags=creationflags,
+                env=env
             )
 
             try:
