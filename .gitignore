@@ -1,6 +1,6 @@
 config.json
 git_sync.ps1
 git_sync.sh
+cron.log
 __pycache__/
 venv/
-cron.log
