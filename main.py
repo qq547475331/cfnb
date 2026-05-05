@@ -827,6 +827,11 @@ def sync_to_github():
 
             try:
                 stdout, stderr = process.communicate(timeout=process_timeout)
+                # 打印脚本的所有输出信息（方便调试）
+                if stdout:
+                    for line in stdout.strip().split('\n'):
+                        if line.strip():
+                            print(f"   [git_sync] {line}")
                 if process.returncode == 0:
                     print("✅ 已自动推送到 GitHub。")
                     return

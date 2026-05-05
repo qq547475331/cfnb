@@ -29,19 +29,32 @@ fi
 
 # ==================== 切换到脚本所在目录 ====================
 cd "$(dirname "$0")" || exit 1
+echo "[git_sync] 工作目录: $(pwd)"
 
 # ==================== 拉取远程最新更新 ====================
-git pull origin "$branch"
+echo "[git_sync] 正在拉取远程最新更新..."
+if ! git pull origin "$branch" --allow-unrelated-histories 2>&1; then
+    echo "[git_sync] 拉取失败，继续尝试推送..."
+fi
 
 # ==================== 暂存并提交 ip.txt ====================
+echo "[git_sync] 正在提交 ip.txt..."
 git add ip.txt
 commit_msg="Update ip.txt on $(date '+%Y-%m-%d %H:%M:%S')"
 git commit -m "$commit_msg"
 
 # ==================== 强制推送到 GitHub ====================
-if git push "https://${github_token}@github.com/${github_username}/${repo_name}.git" "$branch" --force; then
-    echo "✅ ip.txt 已推送到 GitHub"
+echo "[git_sync] 正在推送到 GitHub..."
+echo "[git_sync] 仓库: https://github.com/${github_username}/${repo_name}.git"
+echo "[git_sync] 分支: $branch"
+
+if git push "https://${github_token}@github.com/${github_username}/${repo_name}.git" "$branch" --force 2>&1; then
+    echo "[git_sync] ✅ 推送成功！"
 else
-    echo "❌ ip.txt 推送失败，请检查 Token 和网络配置"
+    echo "[git_sync] ❌ 推送失败！"
+    echo "[git_sync] 请检查："
+    echo "[git_sync]   1. GITHUB_TOKEN 是否有效"
+    echo "[git_sync]   2. 仓库访问权限是否正确"
+    echo "[git_sync]   3. 网络连接是否正常"
     exit 1
 fi
