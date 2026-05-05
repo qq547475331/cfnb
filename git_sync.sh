@@ -31,10 +31,39 @@ fi
 cd "$(dirname "$0")" || exit 1
 echo "[git_sync] 工作目录: $(pwd)"
 
-# ==================== 拉取远程最新更新 ====================
-echo "[git_sync] 正在拉取远程最新更新..."
-if ! git pull origin "$branch" --allow-unrelated-histories 2>&1; then
-    echo "[git_sync] 拉取失败，继续尝试推送..."
+# ==================== 处理可能的冲突 ====================
+echo "[git_sync] 正在同步远程最新代码..."
+if git fetch origin "$branch" 2>&1; then
+    LOCAL_COMMIT=$(git rev-parse HEAD 2>/dev/null)
+    REMOTE_COMMIT=$(git rev-parse origin/$branch 2>/dev/null)
+
+    if [ "$LOCAL_COMMIT" != "$REMOTE_COMMIT" ]; then
+        echo "[git_sync] 检测到远程有更新，尝试合并..."
+        # 暂存本地 ip.txt
+        if [ -f ip.txt ]; then
+            cp ip.txt /tmp/ip.txt.backup
+            echo "[git_sync] 已备份本地 ip.txt"
+        fi
+
+        # 拉取远程（使用 rebase 避免冲突）
+        if git pull origin "$branch" --rebase 2>&1; then
+            # 恢复远程的 ip.txt（因为多设备场景下远程的 ip.txt 通常是最新扫描结果）
+            if [ -f /tmp/ip.txt.backup ]; then
+                mv /tmp/ip.txt.backup ip.txt
+                echo "[git_sync] 已恢复 ip.txt"
+            fi
+            echo "[git_sync] 合并成功！"
+        else
+            # rebase 失败，强制重置到远程版本
+            git reset --hard origin/$branch
+            if [ -f /tmp/ip.txt.backup ]; then
+                mv /tmp/ip.txt.backup ip.txt
+            fi
+            echo "[git_sync] 已重置到远程版本"
+        fi
+    fi
+else
+    echo "[git_sync] 获取远程信息失败，继续尝试..."
 fi
 
 # ==================== 暂存并提交 ip.txt ====================
