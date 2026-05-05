@@ -8,24 +8,23 @@
 // ==================== 配置区域 ====================
 
 /**
- * 从环境变量或默认值获取配置
- * 环境变量优先级高于硬编码默认值
+ * 订阅配置 - 修改这里的地址为你自己的 GitHub 仓库地址
  */
 const CONFIG = {
-  // GitHub raw 文件地址（支持通过环境变量覆盖）
-  githubRawUrl: GITHUB_RAW_URL || 'https://raw.githubusercontent.com/qq547475331/cfnb/main/ip.txt',
+  // GitHub raw 文件地址（修改为你自己的仓库地址）
+  githubRawUrl: 'https://raw.githubusercontent.com/qq547475331/cfnb/main/ip.txt',
 
   // 缓存时间（秒），设置为 0 则禁用缓存
-  cacheMaxAge: parseInt(CACHE_MAX_AGE || '300', 10),  // 默认 5 分钟
+  cacheMaxAge: 300,
 
   // 是否启用调试日志（生产环境建议关闭）
-  debug: DEBUG === 'true',
+  debug: false,
 
   // 备用数据源（当 GitHub 不可用时）
-  fallbackIps: FALLBACK_IPS ? FALLBACK_IPS.split(',') : [
-    '43.200.87.5',
-    '154.219.103.79',
-    '54.64.65.213'
+  fallbackIps: [
+    '54.238.157.207',
+    '54.64.65.213',
+    '54.64.6.20'
   ]
 };
 
