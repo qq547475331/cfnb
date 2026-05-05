@@ -1003,7 +1003,9 @@ def main():
 
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         for node_str in final_selected:
-            f.write(node_str + "\n")
+            # 只提取 IP 地址部分（去掉端口和国家代码）
+            ip = node_str.split(':')[0].strip()
+            f.write(ip + "\n")
     print(f"\n结果已保存到 {OUTPUT_FILE}（共 {len(final_selected)} 个节点）")
 
     ip_list = []
