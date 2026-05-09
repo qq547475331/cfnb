@@ -20,6 +20,17 @@ import json
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+def get_session_without_proxy():
+    """创建一个不使用代理的 requests session"""
+    session = requests.Session()
+    session.trust_env = False
+    for key in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'all_proxy']:
+        os.environ.pop(key, None)
+    return session
+
+# 用于 Cloudflare API 调用的 session（不走代理）
+CF_SESSION = get_session_without_proxy()
+
 # ==================== 预编译正则 ====================
 NODE_PATTERN = re.compile(r"^(\d+\.\d+\.\d+\.\d+):(\d+)#(.+)$")
 IP_PORT_PATTERN = re.compile(r"^(\d+\.\d+\.\d+\.\d+):(\d+)#")
@@ -758,7 +769,7 @@ def batch_update_cloudflare_dns(ip_list, ip_info=None, full_bw_results=None, tar
         print(f"\n[DNS 更新] 尝试 {attempt}/{max_retries}...")
         try:
             list_url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?type=A&name={record_name}"
-            response = requests.get(list_url, headers=headers, timeout=(CF_DNS_CONNECT_TIMEOUT, CF_DNS_READ_TIMEOUT))
+            response = CF_SESSION.get(list_url, headers=headers, timeout=(CF_DNS_CONNECT_TIMEOUT, CF_DNS_READ_TIMEOUT))
             response.raise_for_status()
             result = response.json()
             if not result.get('success'):
@@ -780,7 +791,7 @@ def batch_update_cloudflare_dns(ip_list, ip_info=None, full_bw_results=None, tar
 
             batch_url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/batch"
             payload = {"deletes": deletes, "posts": posts}
-            response = requests.post(batch_url, headers=headers, json=payload, timeout=(CF_DNS_CONNECT_TIMEOUT, CF_DNS_READ_TIMEOUT))
+            response = CF_SESSION.post(batch_url, headers=headers, json=payload, timeout=(CF_DNS_CONNECT_TIMEOUT, CF_DNS_READ_TIMEOUT))
             response.raise_for_status()
             result = response.json()
             if not result.get('success'):
