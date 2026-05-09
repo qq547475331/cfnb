@@ -100,6 +100,21 @@ CN_TO_CODE = {
 # ==================== 加载配置文件 ====================
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 
+def expand_env_vars(obj):
+    """递归展开对象中的 ${VAR} 环境变量引用"""
+    if isinstance(obj, str):
+        import re
+        pattern = re.compile(r'\$\{([^}]+)\}')
+        matches = pattern.findall(obj)
+        for var_name in matches:
+            obj = obj.replace(f'${{{var_name}}}', os.environ.get(var_name, ''))
+        return obj
+    elif isinstance(obj, dict):
+        return {k: expand_env_vars(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [expand_env_vars(item) for item in obj]
+    return obj
+
 def load_config():
     """加载 config.json 配置文件，缺失必填字段时抛出异常"""
     try:
@@ -112,6 +127,8 @@ def load_config():
     except json.JSONDecodeError as e:
         print(f"❌ 错误：配置文件格式不正确 - {e}")
         sys.exit(1)
+
+    config = expand_env_vars(config)
 
     defaults = {
         "USE_GLOBAL_MODE": True,
